@@ -33,7 +33,7 @@ O servidor é uma aplicação que gerencia múltiplas conexões de clientes, env
 
 
 ## XorCrypt
-XorCrypt é uma biblioteca de criptografia que utiliza o método XOR para criptografar e descriptografar dados. É usada tanto pelo cliente quanto pelo servidor para garantir a segurança e obfuscaação na comunicação.
+XorCrypt é uma biblioteca de criptografia que utiliza o método XOR para criptografar e descriptografar dados. É usada tanto pelo cliente quanto pelo servidor para garantir a segurança e obfuscaação na comunicação. As strings, entre outras coisas, são todas encryptadas em compile time, sendo que são desencriptadas em runtime.
 
 ### Como Executar
 - Pré-requisitos
