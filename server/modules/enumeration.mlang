@@ -1,0 +1,2 @@
+call kernel32 GetCurrentProcessId DWORD
+call kernel32 GlobalMemoryStatusEx MEMORYSTATUSEX
