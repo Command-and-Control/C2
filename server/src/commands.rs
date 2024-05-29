@@ -91,7 +91,7 @@ async fn interact(session_number: u32, clients: &ClientList) {
                             break;
                         }
                         let incoming = String::from_utf8(incoming).unwrap();
-                        println!("{}", incoming);
+                        print!("{}", incoming);
                     }
                     Err(_) => {
                         drop(clients_read_guard);
@@ -268,6 +268,7 @@ pub async fn print_help() {
     println!("  l, latmove <target> - Perform lateral movement to a target");
     println!("  pe, privesc - Attempt privilege escalation");
     println!("  r, runcmd <command> - Execute a custom command");
+    println!("  h, help - Show this help message");
 }
 
 async fn process_upload(
@@ -315,6 +316,7 @@ async fn remote_upload(
         }
     }
 }
+
 async fn local_upload(
     mut filename: &String,
     destination: &String,
@@ -523,6 +525,7 @@ async fn recursive_copy(src: &Path, dst: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+
 async fn compile_beacon(project_dir: &Path, crate_name: &str) -> Result<(), String> {
     println!("[*] Compiling the beacon code...");
     let output = Command::new("cargo")
