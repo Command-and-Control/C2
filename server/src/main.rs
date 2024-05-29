@@ -279,11 +279,14 @@ async fn handle_clients(clients: ClientList, port: String) {
     }
 }
 
-#[tokio::main(flavor = "multi_thread", worker_threads = 4)]
+#[tokio::main(flavor = "multi_thread")]
 async fn main() {
     std::env::set_var("RUST_LOG", "info");
     env_logger::init();
     log::info!("Logger initialized");
+    for i in 1..9 {
+        log::info!("Thread {} started...", i);
+    }
 
     let clients_user: ClientList = ClientList {
         clients: Arc::new(Mutex::new(vec![])),
